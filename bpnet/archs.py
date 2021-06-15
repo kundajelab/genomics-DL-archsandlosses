@@ -16,11 +16,99 @@ from genomicsDLarchsandlosses.utils.exceptionhandler \
 from tensorflow.keras import layers, Model
 from tensorflow.keras.backend import int_shape
 
+def TaskModule(conv_module_output, conv_module_output_pooled, 
+               bias_profile_input, bias_counts_input, task_id):
+    """
+    
+    """
+    
+    # Profile output
+    # Step 1 - concatenate with bias profile input
+    if bias_profile_input is not None:
+        concat_with_bias_profile_input = layers.concatenate(
+            [conv_module_output, bias_profile_input], 
+            name="concat_with_bias_prof_task_{}".format(task_id), axis=-1)
+    else:
+        concat_with_bias_profile_input = conv_module_output
+    
+    # Step 2 - 1x1 convolution to yield the profile output prediction
+    # for this task
+    one_by_one_conv = layers.Conv1D(
+        filters=1, kernel_size=1, 
+        name="profile_predictions_{}".format(
+            task_id))(concat_with_bias_profile_input)
+    
+    # Logcounts output
+    # Step 1 - concatenate with bias counts input
+    if bias_counts_input is not None:
+        concat_with_bias_counts_input = layers.concatenate(
+            [conv_module_output_pooled, bias_counts_input],
+            name="concat_with_bias_counts_{}".format(task_id), axis=-1)
+    else:
+        concat_with_bias_counts_input = conv_module_output_pooled
+        
+    # Step 2 - Dense layer to yield logcounts prediction for this task
+    dense = layers.Dense(
+        1, name="logcount_predictions_{}".format(
+            task_id))(concat_with_bias_counts_input)
+
+    return (one_by_one_conv, dense)
+
+
+def get_detailed_tasks_info(tasks):
+    """
+    
+    """
+    
+    # number of input tasks
+    num_tasks = len(list(tasks.keys()))
+    
+    # maintain a list of start and end indices to reference into
+    # bias_profile_input to retrieve the corresponding bias tracks
+    bias_profile_input_start_end_indices = []
+    
+    # track total bias tracks as you process each task's info
+    total_bias_tracks = 0
+    
+    for i in range(num_tasks):
+        start_idx = total_bias_tracks
+        
+        # the number of original bias tracks (non-smoothed) for this
+        # task
+        num_bias_tracks = len(tasks[i]['bias'])
+        
+        # if no bias tracks are found for this task
+        if num_bias_tracks == 0:
+            bias_profile_input_start_end_indices.append(None)
+            continue
+
+        # update total
+        total_bias_tracks += num_bias_tracks
+        
+        # the length of the 'bias_smoothing' list should be the same
+        # as the 'bias' list
+        if len(tasks[i]['bias_smoothing']) != num_bias_tracks:
+            raise NoTracebackException(
+                "RuntimeError ('bias_smoothing'): Length mismatch with 'bias'")
+        
+        # count the number of 'smoothed' bias tracks that will be
+        # added on
+        for j in range(num_bias_tracks):
+            if tasks[i]['bias_smoothing'][j] is not None:
+                # add 1 for every smoothed track, not all bias tracks
+                # may have their corresponding smoothed versions
+                total_bias_tracks += 1
+    
+        end_idx = total_bias_tracks
+        bias_profile_input_start_end_indices.append([start_idx, end_idx])
+    
+    return num_tasks, total_bias_tracks, bias_profile_input_start_end_indices
+
 def BPNet(
-    input_seq_len=2114, output_len=1000, num_bias_profiles=2, filters=64,
+    tasks, input_seq_len=2114, output_len=1000, filters=64, 
     num_dilation_layers=8, conv1_kernel_size=21, dilation_kernel_size=3, 
-    profile_kernel_size=75, num_tasks=2, use_attribution_prior=False,
-    attribution_prior_params=None):
+    prebias_profile_kernel_size=75, profile_kernel_size=1,
+    use_attribution_prior=False, attribution_prior_params=None):
     
     """
         BPNet model architecture as described in the BPNet paper
@@ -30,11 +118,7 @@ def BPNet(
             input_seq_len (int): length of input DNA sequence
             
             output_len (int): length of the profile output
-            
-            num_bias_profiles (int): total number of control/bias
-                tracks. In the case where original control and one  
-                smoothed version are provided this value is 2.
-            
+                        
             filters (int): number of filters in each convolutional
                 layer of BPNet
                 
@@ -52,7 +136,14 @@ def BPNet(
             
             num_tasks (int): number of output profile tracks
             
-            use_attribution_prior (bool): indicate whether to use 
+            num_bias_tracks_per_task (int): list of number of 
+                control/bias tracks for each task
+
+            smooth_bias_tracks (boolean): Nested list of boolean
+                values to indicate if each bias track has a smoothed
+                version included
+            
+            use_attribution_prior (boolean): indicate whether to use 
                 attribution prior model
                 
             attribution_prior_params (dict): python dictionary with 
@@ -64,15 +155,21 @@ def BPNet(
         
     """
 
+    num_tasks, total_bias_tracks, indices = get_detailed_tasks_info(tasks)
+
+    print("Total bias tracks", num_tasks)
+    print("Start end indices", indices)
     # The three inputs to BPNet
     inp = layers.Input(shape=(input_seq_len, 4), name='sequence')
     
-    bias_counts_input = layers.Input(shape=(1, ), name="control_logcount")
+    bias_counts_input = layers.Input(
+        shape=(1, num_tasks), name="bias_logcounts")
     
     bias_profile_input = layers.Input(
-        shape=(output_len, num_bias_profiles), name="control_profile")
+        shape=(output_len, total_bias_tracks), name="bias_profiles")
     # end inputs
 
+    print("bias_profiles", bias_profile_input.shape)
     # first convolution without dilation
     first_conv = layers.Conv1D(filters, kernel_size=conv1_kernel_size,
                                padding='valid', activation='relu', 
@@ -115,18 +212,16 @@ def BPNet(
         
         res_layers = cropped_layers
 
-    # the final output from the 6 dilated convolutions 
-    # with resnet-style connections
-    combined_conv = layers.add([l for l, _ in res_layers], 
-                               name='combined_conv') 
+    # the final output from the dilated convolutions with 
+    # resnet-style connections
+    dilation_layers_out = layers.add([l for l, _ in res_layers], 
+                               name='dilation_layers_out') 
 
     # Branch 1. Profile prediction
     # Step 1.1 - 1D convolution with a very large kernel
-    profile_out_prebias = layers.Conv1D(filters=num_tasks, 
-                                        kernel_size=profile_kernel_size, 
-                                        padding='valid', 
-                                        name='profile_out_prebias')\
-                                        (combined_conv)
+    profile_out_prebias = layers.Conv1D(
+        filters=num_tasks, kernel_size=prebias_profile_kernel_size, 
+        padding='valid', name='profile_out_prebias')(dilation_layers_out)
 
     # Step 1.2 - Crop to match size of the required output size, a
     #            minimum difference of 346 is required between input
@@ -136,15 +231,7 @@ def BPNet(
     profile_out_prebias = layers.Cropping1D(
         cropsize, name='prof_out_crop2match_output')(profile_out_prebias)
 
-    # Step 1.3 - concatenate with the control profile 
-    concat_pop_bpi = layers.concatenate(
-        [profile_out_prebias, bias_profile_input], 
-        name="concat_with_bias_prof", axis=-1)
-
-    # Step 1.4 - Final 1x1 convolution
-    profile_out = layers.Conv1D(filters=num_tasks, kernel_size=1, 
-                                name="profile_predictions")(concat_pop_bpi)
-
+    
     # Branch 2. Counts prediction
     # Step 2.1 - Global average pooling along the "length", the result
     #            size is same as "filters" parameter to the BPNet 
@@ -153,15 +240,37 @@ def BPNet(
     gap_combined_conv = layers.GlobalAveragePooling1D(
         name='gap')(combined_conv) 
     
-    # Step 2.2 Concatenate the output of GAP with bias counts
-    concat_gapcc_bci = layers.concatenate(
-        [gap_combined_conv, bias_counts_input], name="concat_with_bias_cnts", 
-        axis=-1)
-    
-    # Step 2.3 Dense layer to predict final counts
-    count_out = layers.Dense(num_tasks, 
-                             name="logcount_predictions")(concat_gapcc_bci)
-  
+    # invoke task module for each task
+    profile_outputs = []
+    counts_outputs = []
+    for i in range(num_tasks):
+        _bias_profile_input = None
+        _bias_counts_input = None
+        if indices[i] is not None:
+            # get the slice of the bias profile input for this task
+            _bias_profile_input = layers.Lambda(
+                lambda x: x[...,indices[i][0]:indices[i][1]], 
+                name="bias_prof_{}".format(i))(bias_profile_input)
+        
+            # get the slice of bias counts input specific to this task
+            _bias_counts_input = layers.Lambda(
+                lambda x: x[..., i], 
+                name="bias_counts_{}".format(i))(bias_counts_input)
+        
+        (one_by_one_conv, dense) = TaskModule(
+            profile_out_prebias, gap_combined_conv, _bias_profile_input, 
+            _bias_counts_input, i)
+        profile_outputs.append(one_by_one_conv)
+        counts_outputs.append(dense)
+
+    # Concatenate all the per task profile outputs
+    profile_output = layers.concatenate(
+        profile_outputs, name="profile_predictions", axis=-1)
+                              
+    # Concatenate all the per task counts outputs
+    counts_output = layers.concatenate(
+        counts_outputs, name="logcount_predictions", axis=-1)
+            
     if use_attribution_prior:
         if attribution_prior_params is None:
             raise NoTracebackException(
@@ -194,6 +303,6 @@ def BPNet(
         # instantiate keras Model with inputs and outputs
         model = Model(
             inputs=[inp, bias_counts_input, bias_profile_input],
-            outputs=[profile_out, count_out])
+            outputs=[profile_output, counts_output])
 
     return model
