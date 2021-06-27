@@ -2,7 +2,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import tensorflow.keras.backend as kb
 
-from genomicsDLarchsandlosses.bpnet.attribution_prior_utils import \
+from genomicsdlarchsandlosses.bpnet.attribution_prior_utils import \
     smooth_tensor_1d
 
 def multinomial_nll(true_counts, logits):

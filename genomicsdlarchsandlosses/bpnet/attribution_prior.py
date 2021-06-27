@@ -1,15 +1,28 @@
+import genomicsdlarchsandlosses.bpnet.bpnetdefaults as bpnetdefaults
 import tensorflow as tf
 import tensorflow.keras.backend as kb
 
-from genomicsDLarchsandlosses.bpnet.losses import fourier_att_prior_loss
+from genomicsdlarchsandlosses.bpnet.losses import fourier_att_prior_loss
 from tensorflow.keras import Model
 from tensorflow.nn import log_softmax
 
 class AttributionPriorModel(Model):
 
-    def __init__(self, frequency_limit, limit_softness, grad_smooth_sigma,
-                 profile_grad_loss_weight, counts_grad_loss_weight,
-                 **kwargs):
+    def __init__(
+        self, 
+        frequency_limit=\
+            bpnetdefaults.ATTRIBUTION_PRIOR_PARAMS['frequency_limit'],
+        limit_softness=\
+            bpnetdefaults.ATTRIBUTION_PRIOR_PARAMS['limit_softness'],
+        grad_smooth_sigma=\
+            bpnetdefaults.ATTRIBUTION_PRIOR_PARAMS['grad_smooth_sigma'],
+        profile_grad_loss_weight=\
+            bpnetdefaults.ATTRIBUTION_PRIOR_PARAMS['profile_grad_loss_weight'],
+        counts_grad_loss_weight=\
+            bpnetdefaults.ATTRIBUTION_PRIOR_PARAMS['counts_grad_loss_weight'], 
+        **kwargs):
+        
+        # call the base class with inputs and outputs
         super(AttributionPriorModel, self).__init__(**kwargs)
         
         self.freq_limit = frequency_limit
@@ -24,8 +37,6 @@ class AttributionPriorModel(Model):
         # post-softmax probabilities
         y_pred_profile = y_pred[0] - kb.mean(y_pred[0])
         y_pred_profile *= log_softmax(y_pred_profile)
-
-        # Compute gradients of the output with respect to the input
 
         # gradients of profile output w.r.t to input
         input_grads_profile = input_grad_tape.gradient(
@@ -48,6 +59,7 @@ class AttributionPriorModel(Model):
             x['status'], input_grads_counts, self.freq_limit, 
             self.limit_softness, self.grad_smooth_sigma)
 
+        # weighted loss
         batch_attr_prior_loss = \
             (self.profile_grad_loss_weight * batch_attr_prior_loss_profile) + \
             (self.counts_grad_loss_weight * batch_attr_prior_loss_counts)
