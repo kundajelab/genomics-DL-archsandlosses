@@ -246,8 +246,7 @@ def profile_head(
 
 
 def counts_head(
-    syntax_module_out, 
-    units=bpnetdefaults.COUNTS_HEAD_PARAMS['units']):
+    syntax_module_out, name, units=bpnetdefaults.COUNTS_HEAD_PARAMS['units']):
     
     """
         Pre-bias counts output
@@ -255,6 +254,7 @@ def counts_head(
         Args:
             syntax_module_out (tensorflow.keras.layers.Conv1D): output
                 of the BPNet syntax module
+            name (str): name for the counts head layer
             units (int): dimensionality of the counts output space 
                 (same as number of tasks)
                 
@@ -269,7 +269,7 @@ def counts_head(
     # Step 2: Connect the averaged filter outputs to a Dense layer
     # to get counts predictions
     return layers.Dense(
-        units, name="counts_head")(avg_pool)
+        units, name=name)(avg_pool)
 
 
 def profile_bias_module(
@@ -561,23 +561,14 @@ def BPNet(tasks, bpnet_params):
     for i in range(num_tasks):
         total_tracks += len(tasks[i]['signal']['source'])
     
-    # Step 4.1.2 - conv layer to get 
+    # Step 4.1.2 - conv layer to get pre bias profile prediction
     profile_head_out = profile_head(
         syntax_module_out, total_tracks, 
         profile_head_params['kernel_size'], profile_head_params['padding'])
     
-    # Step 4.1.3 crop profile head to match output_len
-    crop_size = int_shape(profile_head_out)[1] // 2 - output_profile_len // 2
-    profile_head_out = layers.Cropping1D(
-        crop_size, name="profile_head_cropped")(profile_head_out)
-    
-    # Step 4.2 - Counts head (global average pooling)
-    counts_head_out = counts_head(
-        syntax_module_out, total_tracks)
-    
-    # Step 5 - Bias Input
     # first let's figure out if bias input is required based on 
-    # tasks info
+    # tasks info, this also affects the naming of the profile head
+    # and counts head layers
     # total number of bias tasks in the tasks_info dictionary
     total_bias_tracks = 0
     # number of bias tracks in each task
@@ -585,7 +576,26 @@ def BPNet(tasks, bpnet_params):
     for i in range(num_tasks):
         task_bias_tracks[i] = _get_num_bias_tracks_for_task(tasks[i])
         total_bias_tracks += task_bias_tracks[i]
+
+    # Step 4.1.3 crop profile head to match output_len
+    if total_bias_tracks == 0:
+        profile_head_name = 'profile_predictions'
+    else:
+        profile_head_name = 'profile_head_cropped'
+        
+    crop_size = int_shape(profile_head_out)[1] // 2 - output_profile_len // 2
+    profile_head_out = layers.Cropping1D(
+        crop_size, name=profile_head_name)(profile_head_out)
     
+    # Step 4.2 - Counts head (global average pooling)
+    if total_bias_tracks == 0:
+        counts_head_name = 'logcounts_predictions'
+    else:
+        counts_head_name = 'counts_head'
+    counts_head_out = counts_head(
+        syntax_module_out, counts_head_name, total_tracks)
+    
+    # Step 5 - Bias Input
     # if the tasks have no bias tracks then profile_head and 
     # counts_head are the outputs of the model
     inputs = [one_hot_input]
@@ -594,6 +604,7 @@ def BPNet(tasks, bpnet_params):
         # the batch generator sends
         # At this point, since there is no bias the two outputs
         # are called 'profile_head_cropped' & 'counts_head'
+        print("renaming layers")
         profile_head_out._name = 'profile_predictions'
         counts_head_out._name = 'logcounts_predictions'
         profile_outputs = profile_head_out
