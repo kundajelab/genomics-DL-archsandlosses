@@ -5,12 +5,15 @@ from decimal import Decimal
 from genomicsdlarchsandlosses.bpnet.archs import BPNet
 from tensorflow.keras.utils import plot_model
 
-motif_module_params = bpnetdefaults.MOTIF_MODULE_PARAMS
-syntax_module_params = bpnetdefaults.SYNTAX_MODULE_PARAMS
-profile_head_params = bpnetdefaults.PROFILE_HEAD_PARAMS
-counts_head_params = bpnetdefaults.COUNTS_HEAD_PARAMS
-profile_bias_module_params = bpnetdefaults.PROFILE_BIAS_MODULE_PARAMS
-counts_bias_module_params = bpnetdefaults.COUNTS_BIAS_MODULE_PARAMS
+import os
+import json
+
+# motif_module_params = bpnetdefaults.MOTIF_MODULE_PARAMS
+# syntax_module_params = bpnetdefaults.SYNTAX_MODULE_PARAMS
+# profile_head_params = bpnetdefaults.PROFILE_HEAD_PARAMS
+# counts_head_params = bpnetdefaults.COUNTS_HEAD_PARAMS
+# profile_bias_module_params = bpnetdefaults.PROFILE_BIAS_MODULE_PARAMS
+# counts_bias_module_params = bpnetdefaults.COUNTS_BIAS_MODULE_PARAMS
 
 # change activations to linear
 # motif_module_params['activation'] = 'linear'
@@ -95,10 +98,28 @@ tasks = {
 #     }
 # }
 
-# single unstranded task with linear activations
-model_v1 = BPNet(tasks, 'bpnet_params_1_task.json')
+def load_json(params_json_file):
+    # make sure the params json file exists
+    if not os.path.isfile(params_json_file):
+        raise NoTracebackException(
+            "File not found: {} ".format(params_json_file))
 
-model_v2 = BPNet(tasks, 'bpnet_params_1_task_padding_same.json')
+    # load the params json file
+    with open(params_json_file, 'r') as inp_json:
+        try:
+            model_arch_params = json.loads(inp_json.read())
+        except json.decoder.JSONDecodeError:
+            raise NoTracebackException(
+                "Unable to load json file {}. Valid json expected. "
+                "Check the file for syntax errors.".format(
+                    params_json_file))
+    return model_arch_params
+
+        
+# single unstranded task with linear activations
+model_v1 = BPNet(tasks, load_json('bpnet_params_1_task.json'))
+
+model_v2 = BPNet(tasks, load_json('bpnet_params_1_task_padding_same.json'))
 
 model_v1.summary()
 model_v2.summary()
