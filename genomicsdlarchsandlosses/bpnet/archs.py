@@ -413,30 +413,17 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
             counts_outputs, name="logcounts_predictions", axis=-1)
 
     
-def load_params(params_json):
+def load_params(params):
     """
         Load BPNet parameters from json file
         
         Args: 
-            params_json (str): path to params json file
+            params (dict): parameters to the BPNet architecture
         
         Returns:
             tuple - all parameters to BPNet
     """
-    
-    # make sure the params json file exists
-    if not os.path.isfile(params_json):
-        raise NoTracebackException("File not found: {} ".format(params_json))
-            
-    # load the params json file
-    with open(params_json, 'r') as inp_json:
-        try:
-            params = json.loads(inp_json.read())
-        except json.decoder.JSONDecodeError:
-            raise NoTracebackException(
-                "Unable to load json file {}. Valid json expected. "
-                "Check the file for syntax errors.".format(params_json))
-    
+        
     # initialize all params from defaults and then run through
     # all the override values from the params json and replace
     # default values with the user defined values
@@ -496,7 +483,7 @@ def load_params(params_json):
             use_attribution_prior, attribution_prior_params)
 
 
-def BPNet(tasks, params_json):
+def BPNet(tasks, bpnet_params):
 
     """
         BPNet architecture definition
@@ -504,8 +491,8 @@ def BPNet(tasks, params_json):
         Args:
             tasks (dict): dictionary of tasks info specifying
                 'signal', 'loci', and 'bias' for each task
-            params_json (str): path to json containing parameters to
-                BPNet. The keys include (all are optional)- 
+            bpnet_params (dict): parameters to the BPNet architecture
+                The keys include (all are optional)- 
                 'input_len': (int), 
                 'output_profile_len': (int), 
                 'motif_module_params': (dict) - 
@@ -549,7 +536,7 @@ def BPNet(tasks, params_json):
      profile_bias_module_params,
      counts_bias_module_params,
      use_attribution_prior, 
-     attribution_prior_params) = load_params(params_json)    
+     attribution_prior_params) = load_params(bpnet_params)    
 
     # Step 1 - sequence input
     one_hot_input = layers.Input(shape=(input_len, 4), name='sequence')
