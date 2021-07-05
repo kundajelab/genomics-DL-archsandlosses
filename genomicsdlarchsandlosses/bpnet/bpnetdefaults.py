@@ -52,12 +52,18 @@ PROFILE_BIAS_MODULE_PARAMS = {
     # 'kernel_sizes' is a list in case we have a multitask scenario,
     # each task could have a different kernel size.
     # Using a kernel_size of 1 results in a 1x1 convolution
+    # Note: its possible that not all tasks in the multitask scenario
+    # have bias, for e.g. in a 4-task scenarios wherein the 3rd task
+    # doesn't have bias, you can specify 'kernel_sizes': [1, 3, None, 1]
     'kernel_sizes': [1]
 }
 
 # parameters to the counts bias module
 COUNTS_BIAS_MODULE_PARAMS = {
 }
+
+# enable attribution prior loss
+USE_ATTRIBUTION_PRIOR = False
 
 # attribution prior parameter defaults
 ATTRIBUTION_PRIOR_PARAMS = {

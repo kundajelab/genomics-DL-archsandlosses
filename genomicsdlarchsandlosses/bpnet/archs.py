@@ -16,7 +16,9 @@ from genomicsdlarchsandlosses.utils.exceptionhandler \
 from tensorflow.keras import layers, Model
 from tensorflow.keras.backend import int_shape
 
+import json
 import numpy as np
+import os
 import sys
 import tensorflow as tf
 import genomicsdlarchsandlosses.bpnet.bpnetdefaults as bpnetdefaults
@@ -131,7 +133,6 @@ def motif_module(
     motif_module_out = one_hot_input
     # n-1 conv layers with activation (n = len(kernel_sizes))
     for i in range(len(kernel_sizes)-1):
-        print('conv_{}'.format(i))
         motif_module_out = layers.Conv1D(
             filters[i], kernel_size=kernel_sizes[i], padding=padding, 
             activation='relu', name='conv_{}'.format(i))(motif_module_out)
@@ -139,7 +140,6 @@ def motif_module(
     # The activation of the last conv in the motif module is done
     # in the syntax module. The reason for this is to accommodate 
     # the 'pre_activation_residual_unit' option in the syntax module
-    print('conv_{}'.format(len(filters) - 1))
     return layers.Conv1D(
         filters[-1], kernel_size=kernel_sizes[-1], padding=padding, 
         name='conv_{}'.format(len(filters) - 1))(motif_module_out)
@@ -314,7 +314,6 @@ def profile_bias_module(
             _profile_head = _slice(
                 2, task_offset, task_offset + num_task_tracks, 
                 name="prof_head_{}".format(i))(profile_head)
-            print("_profile_head  shape ", int_shape(_profile_head))
         
         # increment the offset 
         task_offset += num_task_tracks
@@ -327,8 +326,6 @@ def profile_bias_module(
         else:
             # concatenate profile head with corresponding profile bias
             # input
-            print("_profile_head is None", _profile_head is None)
-            print("profile_bias_inputs[i] is None", profile_bias_inputs[i] is None)
             concat_with_profile_bias_input = layers.concatenate(
                 [_profile_head, profile_bias_inputs[i]], 
                 name="concat_with_prof_bias_{}".format(i), axis=-1)
@@ -385,17 +382,11 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
             _counts_head = _slice(
                 1, task_offset, task_offset + num_task_tracks, 
                 name="counts_head_{}".format(i))(counts_head)
-            print("_counts_head  shape ", int_shape(_counts_head))
 
         
         # increment the offset 
         task_offset += num_task_tracks
         
-#             #  get the slice of counts head for this task
-#             _counts_head = layers.Lambda(
-#                 lambda x: tf.slice(x, [0, i], [-1, 1]), 
-#                 name="counts_head_{}".format(i))(counts_head)
-                
         # if no bias tracks are found for this task, we directly append
         # the slice of the counts_head corresponding to this task to
         # counts_outputs
@@ -422,18 +413,90 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
             counts_outputs, name="logcounts_predictions", axis=-1)
 
     
-def BPNet(
-    tasks,
-    input_seq_len=bpnetdefaults.INPUT_LEN,
-    output_profile_len=bpnetdefaults.OUTPUT_PROFILE_LEN, 
-    motif_module_params=bpnetdefaults.MOTIF_MODULE_PARAMS, 
-    syntax_module_params=bpnetdefaults.SYNTAX_MODULE_PARAMS, 
-    profile_head_params=bpnetdefaults.PROFILE_HEAD_PARAMS, 
-    counts_head_params=bpnetdefaults.COUNTS_HEAD_PARAMS, 
-    profile_bias_module_params=bpnetdefaults.PROFILE_BIAS_MODULE_PARAMS, 
-    counts_bias_module_params=bpnetdefaults.COUNTS_BIAS_MODULE_PARAMS,
-    use_attribution_prior=False, 
-    attribution_prior_params=bpnetdefaults.ATTRIBUTION_PRIOR_PARAMS):
+def load_params(params_json):
+    """
+        Load BPNet parameters from json file
+        
+        Args: 
+            params_json (str): path to params json file
+        
+        Returns:
+            tuple - all parameters to BPNet
+    """
+    
+    # make sure the params json file exists
+    if not os.path.isfile(params_json):
+        raise NoTracebackException("File not found: {} ".format(params_json))
+            
+    # load the params json file
+    with open(params_json, 'r') as inp_json:
+        try:
+            params = json.loads(inp_json.read())
+        except json.decoder.JSONDecodeError:
+            raise NoTracebackException(
+                "Unable to load json file {}. Valid json expected. "
+                "Check the file for syntax errors.".format(params_json))
+    
+    # initialize all params from defaults and then run through
+    # all the override values from the params json and replace
+    # default values with the user defined values
+    input_len = bpnetdefaults.INPUT_LEN
+    if 'input_len' in params:
+        input_len = params['input_len']
+
+    output_profile_len = bpnetdefaults.OUTPUT_PROFILE_LEN
+    if 'output_profile_len' in params:
+        output_profile_len = params['output_profile_len']
+
+    motif_module_params = bpnetdefaults.MOTIF_MODULE_PARAMS
+    if 'motif_module_params' in params:
+        for key in params['motif_module_params']:
+            motif_module_params[key] = params['motif_module_params'][key]
+
+    syntax_module_params = bpnetdefaults.SYNTAX_MODULE_PARAMS
+    if 'syntax_module_params' in params:
+        for key in params['syntax_module_params']:
+            syntax_module_params[key] = params['syntax_module_params'][key]
+            
+    profile_head_params = bpnetdefaults.PROFILE_HEAD_PARAMS
+    if 'profile_head_params' in params:
+        for key in params['profile_head_params']:
+            profile_head_params[key] = params['profile_head_params'][key]
+            
+    counts_head_params = bpnetdefaults.COUNTS_HEAD_PARAMS
+    if 'counts_head_params' in params:
+        for key in params['counts_head_params']:
+            counts_head_params[key] = params['counts_head_params'][key]
+        
+    profile_bias_module_params = bpnetdefaults.PROFILE_BIAS_MODULE_PARAMS
+    if 'profile_bias_module_params' in params:
+        for key in params['profile_bias_module_params']:
+            profile_bias_module_params[key] = \
+                params['profile_bias_module_params'][key]
+
+    counts_bias_module_params = bpnetdefaults.COUNTS_BIAS_MODULE_PARAMS
+    if 'counts_bias_module_params' in params:
+        for key in params['counts_bias_module_params']:
+            counts_bias_module_params[key] = \
+                params['counts_bias_module_params'][key]
+            
+    use_attribution_prior = bpnetdefaults.USE_ATTRIBUTION_PRIOR
+    if 'use_attribution_prior' in params:
+        use_attribution_prior = params['use_attribution_prior']
+        
+    attribution_prior_params = bpnetdefaults.ATTRIBUTION_PRIOR_PARAMS
+    if 'attribution_prior_params' in params:
+        for key in params['attribution_prior_params']:
+            attribution_prior_params[key] = \
+                params['attribution_prior_params'][key]
+            
+    return (input_len, output_profile_len, motif_module_params, 
+            syntax_module_params, profile_head_params, counts_head_params,
+            profile_bias_module_params, counts_bias_module_params,
+            use_attribution_prior, attribution_prior_params)
+
+
+def BPNet(tasks, params_json):
 
     """
         BPNet architecture definition
@@ -441,73 +504,90 @@ def BPNet(
         Args:
             tasks (dict): dictionary of tasks info specifying
                 'signal', 'loci', and 'bias' for each task
-            input_seq_len (int): length of one hot encoded input 
-                sequence 
-            output_profile_len (int): length of profile predictions
-            motif_module_params (dict): parameters to the motif 
-                module, required keys - 'filters' (list),
-                'kernel_sizes' (list), 'padding' (str)
-            syntax_module_params (dict): parameters to the syntax 
-                module, required keys - 'num_dilation_layers' (int),
-                'filters' (int), 'kernel_size' (int), 'padding' (str),
-                'pre_activation_residual_unit' (boolean)
-            profile_head_params (dict): parameters to the profile head 
-                module, required keys - 'filters', 'kernel_size', 
-                'padding'
-            counts_head_params (dict): parameters to counts head
-                module, required keys - 'units' (int, for Dense layer) 
-            profile_bias_module_params (dict): parameters to the 
-                profile bias module, required keys - 'kernel_sizes' 
-                (list)
-            counts_bias_module_params (dict): parameters to the 
-                counts bias module. A placeholer for future use, 
-                currently a dictionary with no keys
-            use_attribution_prior (boolean): indicate whether to use 
-                attribution prior loss model
-            attribution_prior_params (dict): python dictionary 
-                required keys - 'frequency_limit', 'limit_softness',
-                'smooth_sigma', 'profile_grad_loss_weight',
-                'counts_grad_loss_weight'
+            params_json (str): path to json containing parameters to
+                BPNet. The keys include (all are optional)- 
+                'input_len': (int), 
+                'output_profile_len': (int), 
+                'motif_module_params': (dict) - 
+                    'filters' (list)
+                    'kernel_sizes' (list)
+                    'padding' (str) 
+                'syntax_module_params': (dict) -     
+                    'num_dilation_layers' (int)
+                    'filters' (int)
+                    'kernel_size' (int)
+                    'padding': (str)
+                    'pre_activation_residual_unit' (boolean)
+                'profile_head_params': (dict) -
+                    'filters' (int)
+                    'kernel_size' (int)
+                    'padding' (str)
+                'counts_head_params': (dict) -
+                    'units' (int)
+                'profile_bias_module_params': (dict) - 
+                    'kernel_sizes' (list)
+                'counts_bias_module_params': (dict) - N/A
+                'use_attribution_prior': (boolean)
+                'attribution_prior_params': (dict) -
+                    'frequency_limit' (int)
+                    'limit_softness' (float)
+                    'grad_smooth_sigma' (int)
+                    'profile_grad_loss_weight' (float)
+                    'counts_grad_loss_weight' (float)
+
         Returns:
             tensorflow.keras.layers.Model
     """
-
-    one_hot_input = layers.Input(shape=(input_seq_len, 4), name='sequence')
     
-    # Step 1 - Motif module (one or more conv layers)
+    # load params from json file
+    (input_len, 
+     output_profile_len, 
+     motif_module_params, 
+     syntax_module_params, 
+     profile_head_params, 
+     counts_head_params,
+     profile_bias_module_params,
+     counts_bias_module_params,
+     use_attribution_prior, 
+     attribution_prior_params) = load_params(params_json)    
+
+    # Step 1 - sequence input
+    one_hot_input = layers.Input(shape=(input_len, 4), name='sequence')
+    
+    # Step 2 - Motif module (one or more conv layers)
     motif_module_out = motif_module(
         one_hot_input, motif_module_params['filters'], 
         motif_module_params['kernel_sizes'], motif_module_params['padding'])
     
-    # Step 2 - Syntax module (all dilation layers)
+    # Step 3 - Syntax module (all dilation layers)
     syntax_module_out = syntax_module(
         motif_module_out, syntax_module_params['num_dilation_layers'], 
         syntax_module_params['filters'], syntax_module_params['kernel_size'],
         syntax_module_params['padding'], 
         syntax_module_params['pre_activation_residual_unit'])
 
-    # Step 3.1 - Profile head (large conv kernel)
-    # Step 3.1.1 - get total number of output tracks across all tasks
+    # Step 4.1 - Profile head (large conv kernel)
+    # Step 4.1.1 - get total number of output tracks across all tasks
     num_tasks = len(list(tasks.keys()))
     total_tracks = 0
     for i in range(num_tasks):
         total_tracks += len(tasks[i]['signal']['source'])
     
-    # Step 3.1.2 - conv layer to get 
+    # Step 4.1.2 - conv layer to get 
     profile_head_out = profile_head(
         syntax_module_out, total_tracks, 
         profile_head_params['kernel_size'], profile_head_params['padding'])
     
-    # Step 3.1.3 crop profile head to match output_len
+    # Step 4.1.3 crop profile head to match output_len
     crop_size = int_shape(profile_head_out)[1] // 2 - output_profile_len // 2
     profile_head_out = layers.Cropping1D(
         crop_size, name="profile_head_cropped")(profile_head_out)
     
-    # Step 3.2 - Counts head (global average pooling)
+    # Step 4.2 - Counts head (global average pooling)
     counts_head_out = counts_head(
         syntax_module_out, total_tracks)
     
-    # Step 4 - Bias Input
+    # Step 5 - Bias Input
     # first let's figure out if bias input is required based on 
     # tasks info
     # total number of bias tasks in the tasks_info dictionary
@@ -525,7 +605,12 @@ def BPNet(
         profile_outputs = profile_head_out
         logcounts_outputs = counts_head_out        
     else:        
-        # Step 4.1 - Define the bias input layers 
+        if num_tasks != len(profile_bias_module_params['kernel_sizes']):
+            raise NoTracebackException(
+                "Length on 'kernel_sizes' in profile_bias_module_params "
+                "must match #tasks")
+        
+        # Step 5.1 - Define the bias input layers 
         profile_bias_inputs = []
         counts_bias_inputs = []
         for i in range(num_tasks):
@@ -547,12 +632,12 @@ def BPNet(
                 profile_bias_inputs.append(None)    
                 counts_bias_inputs.append(None)
             
-        # Step 4.2 - account for profile bias
+        # Step 5.2 - account for profile bias
         profile_outputs = profile_bias_module(
             profile_head_out, profile_bias_inputs, tasks, 
             kernel_sizes=profile_bias_module_params['kernel_sizes'])
     
-        # Step 4.3 - account for counts bias
+        # Step 5.3 - account for counts bias
         logcounts_outputs = counts_bias_module(
             counts_head_out, counts_bias_inputs, tasks)
     
