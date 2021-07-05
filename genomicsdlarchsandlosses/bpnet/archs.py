@@ -493,7 +493,7 @@ def BPNet(tasks, bpnet_params):
                 'signal', 'loci', and 'bias' for each task
             bpnet_params (dict): parameters to the BPNet architecture
                 The keys include (all are optional)- 
-                'input_len': (int), 
+                'input_len': (int)
                 'output_profile_len': (int), 
                 'motif_module_params': (dict) - 
                     'filters' (list)
@@ -521,6 +521,7 @@ def BPNet(tasks, bpnet_params):
                     'grad_smooth_sigma' (int)
                     'profile_grad_loss_weight' (float)
                     'counts_grad_loss_weight' (float)
+                'loss_weights': (list)
 
         Returns:
             tensorflow.keras.layers.Model
@@ -589,6 +590,12 @@ def BPNet(tasks, bpnet_params):
     # counts_head are the outputs of the model
     inputs = [one_hot_input]
     if total_bias_tracks == 0:
+        # we need to first rename the layers to correspond to what
+        # the batch generator sends
+        # At this point, since there is no bias the two outputs
+        # are called 'profile_head_cropped' & 'counts_head'
+        profile_head_out._name = 'profile_predictions'
+        counts_head_out._name = 'logcounts_predictions'
         profile_outputs = profile_head_out
         logcounts_outputs = counts_head_out        
     else:        
