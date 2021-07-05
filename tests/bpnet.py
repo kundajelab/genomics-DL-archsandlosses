@@ -17,8 +17,35 @@ counts_bias_module_params = bpnetdefaults.COUNTS_BIAS_MODULE_PARAMS
 # syntax_module_params['activation'] = 'linear'
 # profile_head_params['activation'] = 'linear'
 
+tasks = {
+    0:{
+        'signal': {
+            'source': ['unstranded.bw']
+        },
+        'loci': {
+            'source': ['peaks.bed']
+        },
+        'bias': {
+            'source': ['bias.bw'],
+            'smoothing': [[7.0, 81]]
+        }        
+    }
+} 
+
 # tasks = {
-#     0:{
+#     0: {
+#         'signal': {
+#             'source': ['plus.bw', 'minus.bw']
+#         },
+#         'loci': {
+#             'source': ['peaks.bed']
+#         },
+#         'bias': {
+#             'source': ['genome_wide_bias_plus.bw', 'genome_wide_bias_minus.bw'],
+#             'smoothing': [None, None]
+#         }
+#     },
+#     1: {
 #         'signal': {
 #             'source': ['unstranded.bw']
 #         },
@@ -26,95 +53,52 @@ counts_bias_module_params = bpnetdefaults.COUNTS_BIAS_MODULE_PARAMS
 #             'source': ['peaks.bed']
 #         },
 #         'bias': {
-#             'source': ['bias.bw'],
+#             'source': [],
+#             'smoothing': []
+#         }
+#     },
+#     2: {
+#         'signal': {
+#             'source': ['unstranded.bw']
+#         },
+#         'loci': {
+#             'source': ['peaks.bed']
+#         },
+#         'bias': {
+#             'source': ['unstranded_genome_wide_bias.bw'],
 #             'smoothing': [[7.0, 81]]
-#         }        
+#         }
+#     },
+#     3: {
+#         'signal': {
+#             'source': ['plus.bw', 'minus.bw']
+#         },
+#         'loci': {
+#             'source': ['peaks.bed']
+#         },
+#         'bias': {
+#             'source': ['genome_wide_bias_plus.bw', 'genome_wide_bias_minus.bw'],
+#             'smoothing': [None, [7.0, 81]]
+#         }
+#     },
+#     4: {
+#         'signal': {
+#             'source': ['plus.bw', 'minus.bw']
+#         },
+#         'loci': {
+#             'source': ['peaks.bed']
+#         },
+#         'bias': {
+#             'source': ['genome_wide_bias_plus.bw', 'genome_wide_bias_minus.bw'],
+#             'smoothing': [[7.0, 81], [7.0, 81]]
+#         } 
 #     }
-# } 
-
-tasks = {
-    0: {
-        'signal': {
-            'source': ['plus.bw', 'minus.bw']
-        },
-        'loci': {
-            'source': ['peaks.bed']
-        },
-        'bias': {
-            'source': ['genome_wide_bias_plus.bw', 'genome_wide_bias_minus.bw'],
-            'smoothing': [None, None]
-        }
-    },
-    1: {
-        'signal': {
-            'source': ['unstranded.bw']
-        },
-        'loci': {
-            'source': ['peaks.bed']
-        },
-        'bias': {
-            'source': [],
-            'smoothing': []
-        }
-    },
-    2: {
-        'signal': {
-            'source': ['unstranded.bw']
-        },
-        'loci': {
-            'source': ['peaks.bed']
-        },
-        'bias': {
-            'source': ['unstranded_genome_wide_bias.bw'],
-            'smoothing': [[7.0, 81]]
-        }
-    },
-    3: {
-        'signal': {
-            'source': ['plus.bw', 'minus.bw']
-        },
-        'loci': {
-            'source': ['peaks.bed']
-        },
-        'bias': {
-            'source': ['genome_wide_bias_plus.bw', 'genome_wide_bias_minus.bw'],
-            'smoothing': [None, [7.0, 81]]
-        }
-    },
-    4: {
-        'signal': {
-            'source': ['plus.bw', 'minus.bw']
-        },
-        'loci': {
-            'source': ['peaks.bed']
-        },
-        'bias': {
-            'source': ['genome_wide_bias_plus.bw', 'genome_wide_bias_minus.bw'],
-            'smoothing': [[7.0, 81], [7.0, 81]]
-        } 
-    }
-}
-
-syntax_module_params['pre_activation_residual_unit'] = False
-profile_bias_module_params['kernel_sizes'] = [1, 1, 1, 1, 1]
-
+# }
 
 # single unstranded task with linear activations
-model_v1 = BPNet(
-    tasks,
-    syntax_module_params=syntax_module_params,
-    profile_bias_module_params=profile_bias_module_params)
+model_v1 = BPNet(tasks, 'bpnet_params_1_task.json')
 
-# change padding to 'same'
-motif_module_params['padding'] = 'same'
-syntax_module_params['padding'] = 'same'
-profile_head_params['padding'] = 'same'
-model_v2 = BPNet(
-    tasks,
-    motif_module_params=motif_module_params, 
-    syntax_module_params=syntax_module_params, 
-    profile_head_params=profile_head_params, 
-    profile_bias_module_params=profile_bias_module_params)
+model_v2 = BPNet(tasks, 'bpnet_params_1_task_padding_same.json')
 
 model_v1.summary()
 model_v2.summary()
