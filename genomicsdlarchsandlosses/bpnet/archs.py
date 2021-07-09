@@ -332,10 +332,13 @@ def profile_bias_module(
 
             # conv layer to yield the profile output prediction
             # for this task. If kernel size is 1 this is a 1x1 convolution
+            if num_tasks == 1:
+                name = "profile_predictions"
+            else:
+                name = "profile_predictions_{}".format(i)
             profile_outputs.append(layers.Conv1D(
                 filters=num_task_tracks, kernel_size=kernel_sizes[i], 
-                name="profile_predictions_{}".format(
-                    i))(concat_with_profile_bias_input))
+                name=name)(concat_with_profile_bias_input))
 
     # profile output
     if len(profile_outputs) == 1:
@@ -401,9 +404,13 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
 
             # single unit Dense layer to yield the counts output 
             # prediction for this task
+            if num_tasks == 1:
+                name = "logcounts_predictions"
+            else:
+                name = "logcounts_predictions_{}".format(i)
             counts_outputs.append(layers.Dense(
-                units=num_task_tracks, name="logcounts_predictions_{}".format(
-                    i))(concat_with_counts_bias_input))
+                units=num_task_tracks, 
+                name=name)(concat_with_counts_bias_input))
 
     # counts output
     if len(counts_outputs) == 1:
