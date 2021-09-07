@@ -11,9 +11,11 @@
 
 from genomicsdlarchsandlosses.bpnet.attribution_prior \
     import AttributionPriorModel
+from genomicsdlarchsandlosses.bpnet.losses import MultichannelMultinomialNLL
 from genomicsdlarchsandlosses.utils.exceptionhandler \
     import NoTracebackException
 from tensorflow.keras import layers, Model
+from tensorflow.keras.models import load_model
 from tensorflow.keras.backend import int_shape
 
 import json
@@ -21,6 +23,7 @@ import numpy as np
 import os
 import sys
 import tensorflow as tf
+import tensorflow.keras.backend as K
 import genomicsdlarchsandlosses.bpnet.bpnetdefaults as bpnetdefaults
 
 def _crop_layer(layer, new_size):
@@ -111,7 +114,8 @@ def motif_module(
     one_hot_input,
     filters=bpnetdefaults.MOTIF_MODULE_PARAMS['filters'], 
     kernel_sizes=bpnetdefaults.MOTIF_MODULE_PARAMS['kernel_sizes'], 
-    padding=bpnetdefaults.MOTIF_MODULE_PARAMS['padding']):
+    padding=bpnetdefaults.MOTIF_MODULE_PARAMS['padding'], 
+    name_prefix=None):
     
     """
         One or more regular convolutional layers that operate on
@@ -126,6 +130,7 @@ def motif_module(
                 convolutional layer
             padding (str): padding to use for the convolutional
                 layers. Either 'valid' or 'same'
+            naem_prefix (str): prefix for layer name
         Returns:
             N-D tensor with shape: (batch_size, ..., filters[-1])
     """
@@ -135,14 +140,16 @@ def motif_module(
     for i in range(len(kernel_sizes)-1):
         motif_module_out = layers.Conv1D(
             filters[i], kernel_size=kernel_sizes[i], padding=padding, 
-            activation='relu', name='conv_{}'.format(i))(motif_module_out)
+            activation='relu', 
+            name='{}_conv_{}'.format(name_prefix, i))(motif_module_out)
         
     # The activation of the last conv in the motif module is done
     # in the syntax module. The reason for this is to accommodate 
     # the 'pre_activation_residual_unit' option in the syntax module
     return layers.Conv1D(
         filters[-1], kernel_size=kernel_sizes[-1], padding=padding, 
-        name='conv_{}'.format(len(filters) - 1))(motif_module_out)
+        name='{}_conv_{}'.format(
+            name_prefix, len(filters) - 1))(motif_module_out)
     
 
 def syntax_module(
@@ -153,7 +160,8 @@ def syntax_module(
     kernel_size=bpnetdefaults.SYNTAX_MODULE_PARAMS['kernel_size'],
     padding=bpnetdefaults.SYNTAX_MODULE_PARAMS['padding'], 
     pre_activation_residual_unit=\
-        bpnetdefaults.SYNTAX_MODULE_PARAMS['pre_activation_residual_unit']):
+        bpnetdefaults.SYNTAX_MODULE_PARAMS['pre_activation_residual_unit'], 
+    name_prefix=None):
     
     """
         Dilated convolutions with resnet-style additions. Each layer 
@@ -176,6 +184,7 @@ def syntax_module(
                 in this paper https://arxiv.org/pdf/1603.05027.pdf. 
                 The True condition is highlighted in 5(c) and False 
                 in 5(a). Default is True
+            name_prefix (str): prefix to use for layer name
         Returns:
             N-D tensor with shape: (batch_size, ..., filters)
         
@@ -192,7 +201,8 @@ def syntax_module(
         # dilated convolution
         conv_output_without_activation = layers.Conv1D(
             filters=filters, kernel_size=kernel_size, padding=padding, 
-            dilation_rate=2**i, name='dil_conv_{}'.format(i))(x_activated)
+            dilation_rate=2**i,
+            name='{}_dil_conv_{}'.format(name_prefix, i))(x_activated)
 
         if pre_activation_residual_unit:
             # If padding is 'valid' we need to crop layer to match 
@@ -202,7 +212,7 @@ def syntax_module(
                     x, int_shape(conv_output_without_activation)[1]) 
             
             x = layers.add([conv_output_without_activation, x], 
-                           name='add_{}'.format(i))
+                           name='{}_add_{}'.format(name_prefix, i))
         else:
             # If padding is 'valid' we need to crop layer to match 
             # size before we add
@@ -211,7 +221,7 @@ def syntax_module(
                     x_activated, int_shape(conv_output_without_activation)[1]) 
                 
             x = layers.add([conv_output_without_activation, x_activated], 
-                           name='add_{}'.format(i))
+                           name='{}_add_{}'.format(name_prefix, i))
             
     # the final output from the dilated convolutions with 
     # resnet-style connections
@@ -222,7 +232,8 @@ def profile_head(
     syntax_module_out, 
     filters=bpnetdefaults.PROFILE_HEAD_PARAMS['filters'], 
     kernel_size=bpnetdefaults.PROFILE_HEAD_PARAMS['kernel_size'], 
-    padding=bpnetdefaults.PROFILE_HEAD_PARAMS['padding']):
+    padding=bpnetdefaults.PROFILE_HEAD_PARAMS['padding'], 
+    name_prefix=None):
     
     """
         Pre-bias profile output
@@ -234,7 +245,8 @@ def profile_head(
                 layer (same as number of tracks across all tasks)
             kernel_size (int): size of convolutional kernel 
             padding (str): padding to use for the convolutional layer
-        
+            name_prefix (str): prefix to use for layer names
+            
         Returns:
             N-D tensor with shape: (batch_size, ..., filters)
 
@@ -242,11 +254,12 @@ def profile_head(
     
     return layers.Conv1D(
         filters=filters, kernel_size=kernel_size, padding=padding, 
-        name='profile_head')(syntax_module_out)
+        name='{}_profile_head'.format(name_prefix))(syntax_module_out)
 
 
 def counts_head(
-    syntax_module_out, name, units=bpnetdefaults.COUNTS_HEAD_PARAMS['units']):
+    syntax_module_out, name, units=bpnetdefaults.COUNTS_HEAD_PARAMS['units'], 
+    name_prefix=None):
     
     """
         Pre-bias counts output
@@ -257,24 +270,63 @@ def counts_head(
             name (str): name for the counts head layer
             units (int): dimensionality of the counts output space 
                 (same as number of tasks)
-                
+            name_prefix (str): prefix to use for layer names
         Returns:
             N-D tensor with shape: (batch_size, ..., units)
     """
     
     # Step 1: average all the filter outputs of the syntax module
     avg_pool = layers.GlobalAveragePooling1D(
-        name='global_avg_pooling')(syntax_module_out)
+        name='{}_global_avg_pooling'.format(name_prefix))(syntax_module_out)
 
     # Step 2: Connect the averaged filter outputs to a Dense layer
     # to get counts predictions
-    return layers.Dense(
-        units, name=name)(avg_pool)
+    return layers.Dense(units, name=name)(avg_pool)
+
+
+def counts_head_v2(
+    syntax_module_out, 
+    name, 
+    filters=bpnetdefaults.PROFILE_HEAD_PARAMS['filters'], 
+    kernel_size=bpnetdefaults.PROFILE_HEAD_PARAMS['kernel_size'], 
+    padding=bpnetdefaults.PROFILE_HEAD_PARAMS['padding'],
+    units=bpnetdefaults.COUNTS_HEAD_PARAMS['units'],
+    name_prefix=None):
+    
+    """
+        Pre-bias counts output
+        
+        In this version we first create a profile head copy that does
+        not share parameters with the profile head in the profile 
+        branch and then apply global average pooling
+    
+        Args:
+            syntax_module_out (tensorflow.keras.layers.Conv1D): output
+                of the BPNet syntax module
+            name (str): name for the counts head layer
+            units (int): dimensionality of the counts output space 
+                (same as number of tasks)
+            name_prefix (str): prefix to use for layer names
+                
+        Returns:
+            N-D tensor with shape: (batch_size, ..., units)
+    """
+    
+    # Step 1: profile head within the counts branch
+    local_profile_head = layers.Conv1D(
+        filters=filters, kernel_size=kernel_size, padding=padding, 
+        name='{}_profile_head_in_counts_branch'.format(
+            name_prefix))(syntax_module_out)
+    
+    # Step 2: average all output of the profile head
+    return layers.GlobalAveragePooling1D(
+        name=name)(local_profile_head)
 
 
 def profile_bias_module(
     profile_head, profile_bias_inputs, tasks_info,
-    kernel_sizes=bpnetdefaults.PROFILE_BIAS_MODULE_PARAMS['kernel_sizes']):
+    kernel_sizes=bpnetdefaults.PROFILE_BIAS_MODULE_PARAMS['kernel_sizes'], 
+    name_prefix=None):
     
     """
         Apply bias correction to profile head
@@ -287,6 +339,7 @@ def profile_bias_module(
                 in the list being the profile bias for the ith task
             kernel_sizes (list): list of kernel sizes, one for each 
                 task, to apply bias correction using a conv layer
+            name_prefix (str): prefix to use for layer names
        
         Returns:
             N-D tensor with shape: (batch_size, ..., #tasks)
@@ -313,7 +366,7 @@ def profile_bias_module(
             #  get the slice of profile head for this task
             _profile_head = _slice(
                 2, task_offset, task_offset + num_task_tracks, 
-                name="prof_head_{}".format(i))(profile_head)
+                name="{}_prof_head_{}".format(name_prefix, i))(profile_head)
         
         # increment the offset 
         task_offset += num_task_tracks
@@ -328,7 +381,8 @@ def profile_bias_module(
             # input
             concat_with_profile_bias_input = layers.concatenate(
                 [_profile_head, profile_bias_inputs[i]], 
-                name="concat_with_prof_bias_{}".format(i), axis=-1)
+                name="{}_concat_with_prof_bias_{}".format(name_prefix, i), 
+                axis=-1)
 
             # conv layer to yield the profile output prediction
             # for this task. If kernel size is 1 this is a 1x1 convolution
@@ -348,7 +402,8 @@ def profile_bias_module(
             profile_outputs, name="profile_predictions", axis=-1)
 
     
-def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
+def counts_bias_module(counts_head, counts_bias_inputs, tasks_info, 
+                       name_prefix=None):
     """
         Apply bias correction to counts head
         
@@ -358,7 +413,8 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
             counts_bias_inputs (list): list of 
                 tensorflow.keras.layers.Input layers with each element
                 in the list being the counts bias for the ith task
-       
+            name_prefix (str): prefix to use for layer names
+            
         Returns:
             N-D tensor with shape: (batch_size, #tasks)
     
@@ -384,7 +440,7 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
             #  get the slice of profile head for this task
             _counts_head = _slice(
                 1, task_offset, task_offset + num_task_tracks, 
-                name="counts_head_{}".format(i))(counts_head)
+                name="{}_counts_head_{}".format(name_prefix, i))(counts_head)
 
         
         # increment the offset 
@@ -400,7 +456,8 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
             # for this task
             concat_with_counts_bias_input = layers.concatenate(
                 [_counts_head, counts_bias_inputs[i]], 
-                name="concat_with_counts_bias_{}".format(i), axis=-1)
+                name="{}_concat_with_counts_bias_{}".format(name_prefix, i),
+                axis=-1)
 
             # single unit Dense layer to yield the counts output 
             # prediction for this task
@@ -417,12 +474,14 @@ def counts_bias_module(counts_head, counts_bias_inputs, tasks_info):
         return counts_outputs[0]
     else:
         return layers.concatenate(
-            counts_outputs, name="logcounts_predictions", axis=-1)
+            counts_outputs, 
+            name="logcounts_predictions", axis=-1)
 
     
 def load_params(params):
     """
-        Load BPNet parameters from json file
+        Load BPNet parameters from dictionary, override defaults for
+        keys that are present in the dictionary
         
         Args: 
             params (dict): parameters to the BPNet architecture
@@ -483,14 +542,65 @@ def load_params(params):
         for key in params['attribution_prior_params']:
             attribution_prior_params[key] = \
                 params['attribution_prior_params'][key]
-            
+    
+    bias_model = None
+    if 'bias_model' in params:
+        bias_model_path = params['bias_model']
+        print(bias_model_path)
+        if not os.path.isfile(bias_model_path): 
+            raise NoTracebackException(
+                "FileNotFound 'bias_model': Check the path of the bias model")
+        with CustomObjectScope({'MultichannelMultinomialNLL': 
+                                MultichannelMultinomialNLL, 
+                                'AttributionPriorModel': 
+                                AttributionPriorModel}):
+            bias_model = load_model(bias_model_path)
+        
     return (input_len, output_profile_len, motif_module_params, 
             syntax_module_params, profile_head_params, counts_head_params,
             profile_bias_module_params, counts_bias_module_params,
-            use_attribution_prior, attribution_prior_params)
+            use_attribution_prior, attribution_prior_params, bias_model)
 
 
-def BPNet(tasks, bpnet_params):
+def atac_dnase_bias_model(
+    input_layer, bias_tasks, bias_bpnet_params, bias_model, name_prefix):
+    """
+        Initialize bias model layers using the pre trained bias model
+        
+        Args:
+            
+            bias_model (): pre-trained bias model
+            name_prefix (str): prefix to use for layer names
+            
+        Returns: 
+        
+    
+    """
+    
+    # get bpnet model definition for the bias model
+    bias_model_def = BPNet(
+        bias_tasks, bias_bpnet_params, initiliaze_as_bias_model=True,
+        one_hot_input=input_layer, name_prefix=name_prefix)
+    
+    # get weights of the pre trained bias model
+    bias_model_weights = bias_model.get_weights()
+    
+    # set the weights from the bias_model
+    bias_model_def.set_weights(bias_model_weights)
+    
+    # freeze layers
+    for layer in bias_model_def.layers:
+        layer.trainable = False
+        
+    # outputs of the bias model
+    return bias_model_def.outputs
+    
+    
+    
+
+def BPNet(
+    tasks, bpnet_params, initiliaze_as_bias_model=False, one_hot_input=None, 
+    name_prefix=None):
 
     """
         BPNet architecture definition
@@ -529,12 +639,19 @@ def BPNet(tasks, bpnet_params):
                     'profile_grad_loss_weight' (float)
                     'counts_grad_loss_weight' (float)
                 'loss_weights': (list)
+            initialize_as_bias_model (boolean): specify if this 
+                definition is to be used as a placeholder for 
+                initializing weights from the bias model
+            one_hot_input (keras.layers.Input): one_hot_input if 
+                initialize_as_bias_model is True 
+            name_prefix (str): prefix to use for layer names
+                
 
         Returns:
             tensorflow.keras.layers.Model
     """
     
-    # load params from json file
+    # load params, override defaults
     (input_len, 
      output_profile_len, 
      motif_module_params, 
@@ -544,22 +661,26 @@ def BPNet(tasks, bpnet_params):
      profile_bias_module_params,
      counts_bias_module_params,
      use_attribution_prior, 
-     attribution_prior_params) = load_params(bpnet_params)    
+     attribution_prior_params, 
+     _) = load_params(bpnet_params)    
 
     # Step 1 - sequence input
-    one_hot_input = layers.Input(shape=(input_len, 4), name='sequence')
+    if not initiliaze_as_bias_model:
+        one_hot_input = layers.Input(shape=(input_len, 4), name='sequence')
     
     # Step 2 - Motif module (one or more conv layers)
     motif_module_out = motif_module(
         one_hot_input, motif_module_params['filters'], 
-        motif_module_params['kernel_sizes'], motif_module_params['padding'])
+        motif_module_params['kernel_sizes'], motif_module_params['padding'], 
+        name_prefix=name_prefix)
     
     # Step 3 - Syntax module (all dilation layers)
     syntax_module_out = syntax_module(
         motif_module_out, syntax_module_params['num_dilation_layers'], 
         syntax_module_params['filters'], syntax_module_params['kernel_size'],
         syntax_module_params['padding'], 
-        syntax_module_params['pre_activation_residual_unit'])
+        syntax_module_params['pre_activation_residual_unit'], 
+        name_prefix=name_prefix)
 
     # Step 4.1 - Profile head (large conv kernel)
     # Step 4.1.1 - get total number of output tracks across all tasks
@@ -571,7 +692,8 @@ def BPNet(tasks, bpnet_params):
     # Step 4.1.2 - conv layer to get pre bias profile prediction
     profile_head_out = profile_head(
         syntax_module_out, total_tracks, 
-        profile_head_params['kernel_size'], profile_head_params['padding'])
+        profile_head_params['kernel_size'], profile_head_params['padding'], 
+        name_prefix=name_prefix)
     
     # first let's figure out if bias input is required based on 
     # tasks info, this also affects the naming of the profile head
@@ -585,37 +707,37 @@ def BPNet(tasks, bpnet_params):
         total_bias_tracks += task_bias_tracks[i]
 
     # Step 4.1.3 crop profile head to match output_len
-    if total_bias_tracks == 0:
+    if total_bias_tracks == 0 and initiliaze_as_bias_model:
+        profile_head_name = '{}_profile_predictions'.format(name_prefix)
+    elif total_bias_tracks == 0:
         profile_head_name = 'profile_predictions'
     else:
-        profile_head_name = 'profile_head_cropped'
+        profile_head_name = '{}_profile_head_cropped'.format(name_prefix)
+        
         
     crop_size = int_shape(profile_head_out)[1] // 2 - output_profile_len // 2
     profile_head_out = layers.Cropping1D(
         crop_size, name=profile_head_name)(profile_head_out)
     
     # Step 4.2 - Counts head (global average pooling)
-    if total_bias_tracks == 0:
+    if total_bias_tracks == 0 and initiliaze_as_bias_model:
+        counts_head_name = '{}_logcounts_predictions'.format(name_prefix)
+    elif total_bias_tracks == 0:
         counts_head_name = 'logcounts_predictions'
     else:
-        counts_head_name = 'counts_head'
-    counts_head_out = counts_head(
-        syntax_module_out, counts_head_name, total_tracks)
+        counts_head_name = '{}_counts_head'.format(name_prefix)
+    counts_head_out = counts_head_v2(
+        syntax_module_out, counts_head_name, total_tracks, 
+        name_prefix=name_prefix)
     
     # Step 5 - Bias Input
     # if the tasks have no bias tracks then profile_head and 
     # counts_head are the outputs of the model
     inputs = [one_hot_input]
     if total_bias_tracks == 0:
-        # we need to first rename the layers to correspond to what
-        # the batch generator sends
-        # At this point, since there is no bias the two outputs
-        # are called 'profile_head_cropped' & 'counts_head'
-        print("renaming layers")
-        profile_head_out._name = 'profile_predictions'
-        counts_head_out._name = 'logcounts_predictions'
         profile_outputs = profile_head_out
-        logcounts_outputs = counts_head_out        
+        logcounts_outputs = counts_head_out  
+        
     else:        
         if num_tasks != len(profile_bias_module_params['kernel_sizes']):
             raise NoTracebackException(
@@ -630,12 +752,12 @@ def BPNet(tasks, bpnet_params):
                 # profile bias input for task i
                 profile_bias_inputs.append(layers.Input(
                     shape=(output_profile_len, task_bias_tracks[i]),
-                    name="profile_bias_input_{}".format(i)))
+                    name="{}_profile_bias_input_{}".format(name_prefix, i)))
 
                 # counts bias input for task i
                 counts_bias_inputs.append(layers.Input(
                     shape=(task_bias_tracks[i]), 
-                    name="counts_bias_input_{}".format(i)))
+                    name="{}_counts_bias_input_{}".format(name_prefix, i)))
                 
                 # append to inputs
                 inputs.append(profile_bias_inputs[i])
@@ -647,11 +769,13 @@ def BPNet(tasks, bpnet_params):
         # Step 5.2 - account for profile bias
         profile_outputs = profile_bias_module(
             profile_head_out, profile_bias_inputs, tasks, 
-            kernel_sizes=profile_bias_module_params['kernel_sizes'])
+            kernel_sizes=profile_bias_module_params['kernel_sizes'], 
+            name_prefix=name_prefix)
     
         # Step 5.3 - account for counts bias
         logcounts_outputs = counts_bias_module(
-            counts_head_out, counts_bias_inputs, tasks)
+            counts_head_out, counts_bias_inputs, tasks, 
+            name_prefix=name_prefix)
     
     if use_attribution_prior:            
         # instantiate attribution prior Model with inputs and outputs
@@ -668,3 +792,191 @@ def BPNet(tasks, bpnet_params):
         # instantiate keras Model with inputs and outputs
         return Model(
             inputs=inputs, outputs=[profile_outputs, logcounts_outputs])
+
+
+def BPNet_ATAC_DNase(tasks, bias_tasks, bpnet_params, bias_bpnet_params, 
+                     name_prefix=None):
+
+    """
+        BPNet architecture definition
+    
+        Args:
+            tasks (dict): dictionary of tasks info specifying
+                'signal', and 'loci'
+            bias_tasks (dict): dictionary of tasks info specifying
+                'signal', and 'loci' for the bias model
+            bpnet_params (dict): parameters to the BPNet architecture
+                The keys include (all are optional)- 
+                'input_len': (int)
+                'output_profile_len': (int), 
+                'motif_module_params': (dict) - 
+                    'filters' (list)
+                    'kernel_sizes' (list)
+                    'padding' (str) 
+                'syntax_module_params': (dict) -     
+                    'num_dilation_layers' (int)
+                    'filters' (int)
+                    'kernel_size' (int)
+                    'padding': (str)
+                    'pre_activation_residual_unit' (boolean)
+                'profile_head_params': (dict) -
+                    'filters' (int)
+                    'kernel_size' (int)
+                    'padding' (str)
+                'counts_head_params': (dict) -
+                    'units' (int)
+                'profile_bias_module_params': (dict) - 
+                    'kernel_sizes' (list)
+                'counts_bias_module_params': (dict) - N/A
+                'use_attribution_prior': (boolean)
+                'attribution_prior_params': (dict) -
+                    'frequency_limit' (int)
+                    'limit_softness' (float)
+                    'grad_smooth_sigma' (int)
+                    'profile_grad_loss_weight' (float)
+                    'counts_grad_loss_weight' (float)
+                'loss_weights': (list)
+                'bias_model': (str)
+            bias_bpnet_params (dict): parameters to the bias BPNet 
+                architecture, similar to bpnet_params without the 
+                bias_model key
+            name_prefix (str): prefix to use for layer names
+            
+        Returns:
+            tensorflow.keras.layers.Model
+    """
+    
+    # load params, override defaults
+    (input_len, 
+     output_profile_len, 
+     motif_module_params, 
+     syntax_module_params, 
+     profile_head_params, 
+     counts_head_params,
+     profile_bias_module_params,
+     counts_bias_module_params,
+     use_attribution_prior, 
+     attribution_prior_params, 
+     bias_model) = load_params(bpnet_params)    
+    
+    # providing a bias model is mandatory for ATAC/DNase
+    if bias_model is None:
+        raise NoTracebackException(
+            "BiasModelNotFound: required for BPNet_ATAC_DNase")
+
+    # Step 1 - sequence input
+    one_hot_input = layers.Input(shape=(input_len, 4), name='sequence')
+    
+    # Step 2 - Motif module (one or more conv layers)
+    motif_module_out = motif_module(
+        one_hot_input, motif_module_params['filters'], 
+        motif_module_params['kernel_sizes'], motif_module_params['padding'], 
+        name_prefix=name_prefix)
+    
+    # Step 3 - Syntax module (all dilation layers)
+    syntax_module_out = syntax_module(
+        motif_module_out, syntax_module_params['num_dilation_layers'], 
+        syntax_module_params['filters'], syntax_module_params['kernel_size'],
+        syntax_module_params['padding'], 
+        syntax_module_params['pre_activation_residual_unit'], 
+        name_prefix=name_prefix)
+
+    # Step 4.1 - Profile head (large conv kernel)
+    # Step 4.1.1 - get total number of output tracks across all tasks
+    num_tasks = len(list(tasks.keys()))
+    total_tracks = 0
+    for i in range(num_tasks):
+        total_tracks += len(tasks[i]['signal']['source'])
+    
+    # Step 4.1.2 - conv layer to get pre bias profile prediction
+    profile_head_out = profile_head(
+        syntax_module_out, total_tracks, 
+        profile_head_params['kernel_size'], profile_head_params['padding'], 
+        name_prefix=name_prefix)
+    
+    # total number of bias tasks in the tasks_info dictionary
+    total_bias_tracks = 0
+
+    # For now, we use the same bias model for all tasks and count '1'
+    # towards each task
+    task_bias_tracks = {}
+    for i in range(num_tasks):
+        task_bias_tracks[i] = 1
+        total_bias_tracks += task_bias_tracks[i]
+
+    # Step 4.1.3 crop profile head to match output_len
+    crop_size = int_shape(profile_head_out)[1] // 2 - output_profile_len // 2
+    profile_head_out = layers.Cropping1D(
+        crop_size, name='profile_head_cropped')(profile_head_out)
+    
+    # Step 4.2 - Counts head (global average pooling)
+    counts_head_out = counts_head_v2(
+        syntax_module_out, 'counts_head', total_tracks,
+        name_prefix=name_prefix)
+    
+    inputs = [one_hot_input]
+
+    # Step 5 - Bias Input
+    # for each task get the bias model outputs & account for the 
+    # profile and counts bias
+    out_logits = []
+    out_logcounts = []
+    for i in range(num_tasks):
+        (bias_profile_logits, bias_logcounts_out) = atac_dnase_bias_model(
+            one_hot_input, bias_tasks, bias_bpnet_params, bias_model, 
+            name_prefix="bias_{}".format(i))
+    
+        _profile_head_i = _slice(2, i, i + 1, 
+                name="prof_head_{}".format(i))(profile_head_out)
+        
+        _counts_head_i = _slice(1, i, i + 1, 
+                name="counts_head_{}".format(i))(counts_head_out)
+    
+        # PROFILE: predicted logits are simply a sum of unbias logits with 
+        # (predicted) bias logits
+        if num_tasks == 1:
+            name = "profile_predictions"
+        else:
+            name = "logits_w_bias_{}".format(i)
+        _out_logits = layers.Add(name=name)(
+            [_profile_head_i, bias_profile_logits])
+        out_logits.append(_out_logits)
+        
+        # COUNTS: final count is 
+        # log(exp(unbias_logcounts) + exp(inp_bias_logcounts)))
+        concat_cts = layers.concatenate(
+            [_counts_head_i, bias_logcounts_out], axis=-1)
+        if num_tasks == 1:
+            name = "logcounts_predictions"
+        else:
+            name = "logcounts_w_bias_{}".format(i)
+        _out_logcounts = layers.Lambda(
+            lambda x: tf.math.reduce_logsumexp(x, axis=-1, keepdims=True),
+            name=name)(concat_cts)
+        out_logcounts.append(_out_logcounts)
+
+    # single task output
+    if len(out_logits) == 1:
+        out_logits = out_logits[0]
+        out_logcounts = out_logcounts[0]
+    # multitask output
+    else:
+        out_logits = layers.concatenate(out_logits, axis=-1)
+        out_logcounts = layers.concatenate(out_logcounts, axis=-1)
+        
+    if use_attribution_prior:            
+        # instantiate attribution prior Model with inputs and outputs
+        return AttributionPriorModel(
+            attribution_prior_params['frequency_limit'],
+            attribution_prior_params['limit_softness'],
+            attribution_prior_params['grad_smooth_sigma'],     
+            attribution_prior_params['profile_grad_loss_weight'],
+            attribution_prior_params['counts_grad_loss_weight'],
+            inputs=inputs,
+            outputs=[out_logits, out_logcounts])
+        
+    else:
+        # instantiate keras Model with inputs and outputs
+        return Model(
+            inputs=inputs, outputs=[out_logits, out_logcounts])
+    
