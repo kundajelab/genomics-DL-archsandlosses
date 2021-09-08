@@ -752,12 +752,12 @@ def BPNet(
                 # profile bias input for task i
                 profile_bias_inputs.append(layers.Input(
                     shape=(output_profile_len, task_bias_tracks[i]),
-                    name="{}_profile_bias_input_{}".format(name_prefix, i)))
+                    name="profile_bias_input_{}".format(i)))
 
                 # counts bias input for task i
                 counts_bias_inputs.append(layers.Input(
                     shape=(task_bias_tracks[i]), 
-                    name="{}_counts_bias_input_{}".format(name_prefix, i)))
+                    name="counts_bias_input_{}".format(i)))
                 
                 # append to inputs
                 inputs.append(profile_bias_inputs[i])
