@@ -37,11 +37,16 @@ PROFILE_HEAD_PARAMS = {
     # in one profile head output
     'filters': 1,
     'kernel_size':  75,
-    'padding': 'valid',
+    'padding': 'valid'
 }
 
 # parameters to the counts head (the pre-bias logcounts predictions)
 COUNTS_HEAD_PARAMS = {
+    # the default for a single unstranded task, one filter resulting 
+    # in one counts head output
+    'filters': 1,
+    'kernel_size':  75,
+    'padding': 'valid',
     # number of Dense layer units, the default for a single 
     # unstranded task
     'units': 1

@@ -287,9 +287,9 @@ def counts_head(
 def counts_head_v2(
     syntax_module_out, 
     name, 
-    filters=bpnetdefaults.PROFILE_HEAD_PARAMS['filters'], 
-    kernel_size=bpnetdefaults.PROFILE_HEAD_PARAMS['kernel_size'], 
-    padding=bpnetdefaults.PROFILE_HEAD_PARAMS['padding'],
+    filters=bpnetdefaults.COUNTS_HEAD_PARAMS['filters'], 
+    kernel_size=bpnetdefaults.COUNTS_HEAD_PARAMS['kernel_size'], 
+    padding=bpnetdefaults.COUNTS_HEAD_PARAMS['padding'],
     units=bpnetdefaults.COUNTS_HEAD_PARAMS['units'],
     name_prefix=None):
     
