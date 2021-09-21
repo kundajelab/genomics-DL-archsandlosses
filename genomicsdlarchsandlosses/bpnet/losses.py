@@ -30,8 +30,15 @@ class MultichannelMultinomialNLL(object):
         self.__name__ = "MultichannelMultinomialNLL"
         self.n = n
 
-    def __call__(self, true_counts, logits):
+    def __call__(self, true_counts, logits, weights):
         total = 0
+        
+        # only keep those samples with non zero weight,
+        # here we assume non-zero is 1
+        idxs = (weights != 0)
+        _true_counts = true_counts[idxs, ...]
+        _logits = logits[idxs, ...]
+        
         for i in range(self.n):
             loss = multinomial_nll(true_counts[..., i], logits[..., i])
             if i == 0:

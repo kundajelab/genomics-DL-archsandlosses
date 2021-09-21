@@ -726,7 +726,7 @@ def BPNet(
         counts_head_name = 'logcounts_predictions'
     else:
         counts_head_name = '{}_counts_head'.format(name_prefix)
-    counts_head_out = counts_head_v2(
+    counts_head_out = counts_head(
         syntax_module_out, counts_head_name, total_tracks, 
         name_prefix=name_prefix)
     
@@ -910,7 +910,7 @@ def BPNet_ATAC_DNase(tasks, bias_tasks, bpnet_params, bias_bpnet_params,
         crop_size, name='profile_head_cropped')(profile_head_out)
     
     # Step 4.2 - Counts head (global average pooling)
-    counts_head_out = counts_head_v2(
+    counts_head_out = counts_head(
         syntax_module_out, 'counts_head', total_tracks,
         name_prefix=name_prefix)
     
