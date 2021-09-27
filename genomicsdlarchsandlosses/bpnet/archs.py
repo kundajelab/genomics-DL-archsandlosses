@@ -11,8 +11,8 @@
 
 from numpy.random import seed
 seed(1234)
-from tensorflow import set_random_seed
-set_random_seed(1234)
+from tensorflow.random import set_seed 
+set_seed(1234)
 
 from genomicsdlarchsandlosses.bpnet.attribution_prior \
     import AttributionPriorModel
