@@ -2,9 +2,29 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import tensorflow.keras.backend as kb
 
+
 from genomicsdlarchsandlosses.bpnet.attribution_prior_utils import \
     smooth_tensor_1d
 
+class CustomMeanSquaredError(object):
+    """ Custom class to compute mean squared error
+        but ignore the incoming sample weights
+    
+    """
+    
+    def __init__(self):
+        self.__name__ = "CustomMeanSquaredError"
+
+    def __call__(self, y_true, y_pred, sample_weight=None):
+        
+        mse = tf.keras.losses.MeanSquaredError()
+        
+        # ignore the weights 
+        return mse(y_true, y_pred)
+
+    def get_config(self):
+        return {}
+    
 def multinomial_nll(true_counts, logits):
     """Compute the multinomial negative log-likelihood
     Args:
@@ -30,12 +50,12 @@ class MultichannelMultinomialNLL(object):
         self.__name__ = "MultichannelMultinomialNLL"
         self.n = n
 
-    def __call__(self, true_counts, logits, weights):
+    def __call__(self, true_counts, logits, sample_weight=None):
         total = 0
         
         # only keep those samples with non zero weight,
         # here we assume non-zero is 1
-        idxs = (weights != 0)
+        idxs = (sample_weight != 0)
         _true_counts = true_counts[idxs, ...]
         _logits = logits[idxs, ...]
         

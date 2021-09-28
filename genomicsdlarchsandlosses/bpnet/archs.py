@@ -557,6 +557,8 @@ def load_params(params):
                 "FileNotFound 'bias_model': Check the path of the bias model")
         with CustomObjectScope({'MultichannelMultinomialNLL': 
                                 MultichannelMultinomialNLL, 
+                                'CustomMeanSquaredError': 
+                                CustomMeanSquaredError,
                                 'AttributionPriorModel': 
                                 AttributionPriorModel}):
             bias_model = load_model(bias_model_path)
