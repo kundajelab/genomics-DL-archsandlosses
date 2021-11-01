@@ -264,6 +264,8 @@ def profile_head(
 
 def counts_head(
     syntax_module_out, name, units=bpnetdefaults.COUNTS_HEAD_PARAMS['units'], 
+    dropouts=bpnetdefaults.COUNTS_HEAD_PARAMS['dropouts'],
+    activations=bpnetdefaults.COUNTS_HEAD_PARAMS['activations'],    
     name_prefix=None):
     
     """
@@ -284,48 +286,27 @@ def counts_head(
     avg_pool = layers.GlobalAveragePooling1D(
         name='{}_global_avg_pooling'.format(name_prefix))(syntax_module_out)
 
-    # Step 2: Connect the averaged filter outputs to a Dense layer
-    # to get counts predictions
-    return layers.Dense(units, name=name)(avg_pool)
-
-
-def counts_head_v2(
-    syntax_module_out, 
-    name, 
-    filters=bpnetdefaults.COUNTS_HEAD_PARAMS['filters'], 
-    kernel_size=bpnetdefaults.COUNTS_HEAD_PARAMS['kernel_size'], 
-    padding=bpnetdefaults.COUNTS_HEAD_PARAMS['padding'],
-    units=bpnetdefaults.COUNTS_HEAD_PARAMS['units'],
-    name_prefix=None):
-    
-    """
-        Pre-bias counts output
+    # Step 2: Connect the averaged filter outputs to zero or more 
+    # intermediate Dense layers before the final Dense layer
+    x = avg_pool
+    for i in range(len(units) - 1):
         
-        In this version we first create a profile head copy that does
-        not share parameters with the profile head in the profile 
-        branch and then apply global average pooling
+        if activations[i] != 'leakyrelu':
+            # we can use this formulation for all activations that 
+            # have a string name representation
+            x = layers.Dense(units[i], activation=activations[i])(x)
+        else:
+            # add a separate leaky relu layer since keras doesnt 
+            # have a string name for leaky relu
+            x = layers.Dense(units[i])(x)
+            x = layers.LeakyReLU()(x)
+        
+        # add dropout layer
+        if dropouts[i] > 0.0:
+            x = layers.Dropout(dropouts[i])(x)
     
-        Args:
-            syntax_module_out (tensorflow.keras.layers.Conv1D): output
-                of the BPNet syntax module
-            name (str): name for the counts head layer
-            units (int): dimensionality of the counts output space 
-                (same as number of tasks)
-            name_prefix (str): prefix to use for layer names
-                
-        Returns:
-            N-D tensor with shape: (batch_size, ..., units)
-    """
-    
-    # Step 1: profile head within the counts branch
-    local_profile_head = layers.Conv1D(
-        filters=filters, kernel_size=kernel_size, padding=padding, 
-        name='{}_profile_head_in_counts_branch'.format(
-            name_prefix))(syntax_module_out)
-    
-    # Step 2: average all output of the profile head
-    return layers.GlobalAveragePooling1D(
-        name=name)(local_profile_head)
+    # the final Dense layer with linear activation and no dropout
+    return layers.Dense(units[-1], name=name)(x)
 
 
 def profile_bias_module(
@@ -733,8 +714,13 @@ def BPNet(
         counts_head_name = 'logcounts_predictions'
     else:
         counts_head_name = '{}_counts_head'.format(name_prefix)
+    # the units for the Dense layers
+    units = counts_head_params["units"]
+    # the last Dense layer's units are set to total tracks
+    units[-1] = total_tracks
     counts_head_out = counts_head(
-        syntax_module_out, counts_head_name, total_tracks, 
+        syntax_module_out, counts_head_name, units, 
+        counts_head_params['dropouts'], counts_head_params['activations'],
         name_prefix=name_prefix)
     
     # Step 5 - Bias Input
@@ -917,8 +903,13 @@ def BPNet_ATAC_DNase(tasks, bias_tasks, bpnet_params, bias_bpnet_params,
         crop_size, name='profile_head_cropped')(profile_head_out)
     
     # Step 4.2 - Counts head (global average pooling)
+    # the units for the Dense layers
+    units = counts_head_params["units"]
+    # the last Dense layer's units are set to total tracks
+    units[-1] = total_tracks
     counts_head_out = counts_head(
-        syntax_module_out, 'counts_head', total_tracks,
+        syntax_module_out, 'counts_head', units, 
+        counts_head_params['dropouts'], counts_head_params['activations'], 
         name_prefix=name_prefix)
     
     inputs = [one_hot_input]

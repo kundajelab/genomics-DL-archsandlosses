@@ -42,14 +42,13 @@ PROFILE_HEAD_PARAMS = {
 
 # parameters to the counts head (the pre-bias logcounts predictions)
 COUNTS_HEAD_PARAMS = {
-    # the default for a single unstranded task, one filter resulting 
-    # in one counts head output
-    'filters': 1,
-    'kernel_size':  75,
-    'padding': 'valid',
     # number of Dense layer units, the default for a single 
     # unstranded task
-    'units': 1
+    'units': [1],
+    'dropouts': [0.0],
+    # 'linear', 'relu', 'leakyrelu', 'sigmoid', 'softmax', 'softplus',
+    # 'softsign', 'tanh', 'selu', 'elu', 'exponential'
+    'activations': ['linear']     
 }
 
 # parameters to the profile bias module
