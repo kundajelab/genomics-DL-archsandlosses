@@ -4,6 +4,8 @@ import numpy as np
 from decimal import Decimal
 from genomicsdlarchsandlosses.bpnet.archs import BPNet
 from tensorflow.keras.utils import plot_model
+from genomicsdlarchsandlosses.utils.exceptionhandler \
+    import NoTracebackException
 
 import os
 import json
@@ -20,20 +22,50 @@ import json
 # syntax_module_params['activation'] = 'linear'
 # profile_head_params['activation'] = 'linear'
 
+# tasks = {
+#     0:{
+#         'signal': {
+#             'source': ['unstranded.bw']
+#         },
+#         'loci': {
+#             'source': ['peaks.bed']
+#         },
+#         'bias': {
+#             'source': ['bias.bw'],
+#             'smoothing': [[7.0, 81]]
+#         }        
+#     }
+# } 
+
+# tasks = {
+#     0:{
+#         'signal': {
+#             'source': ['unstranded.bw', 'unstranded.bw']
+#         },
+#         'loci': {
+#             'source': ['peaks.bed']
+#         },
+#         'bias': {
+#             'source': ['bias.bw', 'bias.bw'],
+#             'smoothing': [None, None]
+#         }        
+#     }
+# } 
+
 tasks = {
-    0:{
-        'signal': {
-            'source': ['unstranded.bw']
-        },
-        'loci': {
-            'source': ['peaks.bed']
-        },
-        'bias': {
-            'source': ['bias.bw'],
-            'smoothing': [[7.0, 81]]
-        }        
+  0: {
+    "signal": {
+      "source": ["/home/ittai/ENCSR000EGM/data/plus.bw", "/home/ittai/ENCSR000EGM/data/minus.bw"]
+    },
+    "loci": {
+      "source": ["/home/ittai/ENCSR000EGM/data/peaks.bed"]
+    },
+    "bias": {
+      "source": ["/home/ittai/ENCSR000EGM/data/control_plus.bw", "/home/ittai/ENCSR000EGM/data/control_minus.bw"],
+      "smoothing": [None, None]
     }
-} 
+  }
+}
 
 # tasks = {
 #     0: {
@@ -117,9 +149,10 @@ def load_json(params_json_file):
 
         
 # single unstranded task with linear activations
-model_v1 = BPNet(tasks, load_json('bpnet_params_1_task.json'))
+# model_v1 = BPNet(tasks, load_json('/users/zahoor/lab_data3/Chromatin-Atlas/GM12878_baseline/baseline_filtered_peaks_500/bpnet_params.json'))
+model_v1 = BPNet(tasks, load_json('bpnet_params_1_task_old_counts_head.json'))
 
-model_v2 = BPNet(tasks, load_json('bpnet_params_1_task_padding_same.json'))
+model_v2 = BPNet(tasks, load_json('bpnet_params_1_task_old_counts_head.json'))
 
 model_v1.summary()
 model_v2.summary()
@@ -176,23 +209,23 @@ set_all_weights_to_one(model_v2)
 
 one_hot_input = np.ones((1, 2114, 4))
 profile_bias_input_0 = np.ones((1, 1000, 2))
-profile_bias_input_2 = np.ones((1, 1000, 2))
-profile_bias_input_3 = np.ones((1, 1000, 3))
-profile_bias_input_4 = np.ones((1, 1000, 4))
+# profile_bias_input_2 = np.ones((1, 1000, 2))
+# profile_bias_input_3 = np.ones((1, 1000, 3))
+# profile_bias_input_4 = np.ones((1, 1000, 4))
 counts_bias_input_0 = np.ones((1, 2))
-counts_bias_input_2 = np.ones((1, 2))
-counts_bias_input_3 = np.ones((1, 3))
-counts_bias_input_4 = np.ones((1, 4))
+# counts_bias_input_2 = np.ones((1, 2))
+# counts_bias_input_3 = np.ones((1, 3))
+# counts_bias_input_4 = np.ones((1, 4))
 model_input = {
     'sequence': one_hot_input,
     'profile_bias_input_0': profile_bias_input_0,
-    'profile_bias_input_2': profile_bias_input_2,
-    'profile_bias_input_3': profile_bias_input_3,
-    'profile_bias_input_4': profile_bias_input_4,
-    'counts_bias_input_0': counts_bias_input_0,
-    'counts_bias_input_2': counts_bias_input_2,
-    'counts_bias_input_3': counts_bias_input_3,
-    'counts_bias_input_4': counts_bias_input_4
+#     'profile_bias_input_2': profile_bias_input_2,
+#     'profile_bias_input_3': profile_bias_input_3,
+#     'profile_bias_input_4': profile_bias_input_4,
+    'counts_bias_input_0': counts_bias_input_0
+#     'counts_bias_input_2': counts_bias_input_2,
+#     'counts_bias_input_3': counts_bias_input_3,
+#     'counts_bias_input_4': counts_bias_input_4
 }
 predictions_v1 = model_v1.predict(model_input)
 predictions_v2 = model_v2.predict(model_input)
