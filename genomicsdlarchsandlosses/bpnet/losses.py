@@ -15,11 +15,10 @@ class CustomMeanSquaredError(object):
     def __init__(self):
         self.__name__ = "CustomMeanSquaredError"
 
-    def __call__(self, y_true, y_pred, sample_weight=None):
+    def __call__(self, y_true, y_pred):
         
         mse = tf.keras.losses.MeanSquaredError()
         
-        # ignore the weights 
         return mse(y_true, y_pred)
 
     def get_config(self):
@@ -50,17 +49,14 @@ class MultichannelMultinomialNLL(object):
         self.__name__ = "MultichannelMultinomialNLL"
         self.n = n
 
-    def __call__(self, true_counts, logits, sample_weight=None):
+    def __call__(self, true_counts, logits):
         total = 0
         
         # only keep those samples with non zero weight,
         # here we assume non-zero is 1
-        idxs = (sample_weight != 0)
-        _true_counts = true_counts[idxs, ...]
-        _logits = logits[idxs, ...]
         
         for i in range(self.n):
-            loss = multinomial_nll(_true_counts[..., i], _logits[..., i])
+            loss = multinomial_nll(true_counts[..., i], logits[..., i])
             if i == 0:
                 total = loss
             else:
