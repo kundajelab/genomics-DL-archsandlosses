@@ -17,6 +17,7 @@ set_seed(1234)
 from genomicsdlarchsandlosses.bpnet.attribution_prior \
     import AttributionPriorModel
 from genomicsdlarchsandlosses.bpnet.losses import MultichannelMultinomialNLL
+from genomicsdlarchsandlosses.bpnet.custommodel import CustomModel
 from genomicsdlarchsandlosses.utils.exceptionhandler \
     import NoTracebackException
 from tensorflow.keras import layers, Model
@@ -282,13 +283,17 @@ def counts_head(
             N-D tensor with shape: (batch_size, ..., units)
     """
     
-    # Step 1: average all the filter outputs of the syntax module
-    avg_pool = layers.GlobalAveragePooling1D(
-        name='{}_global_avg_pooling'.format(name_prefix))(syntax_module_out)
-
+    if len(units) == 1:
+        # Step 1: average all the filter outputs of the syntax module
+        x = layers.GlobalAveragePooling1D(
+            name='{}_global_avg_pooling'.format(name_prefix))(syntax_module_out)
+    else:
+        x = layers.Flatten(
+            name='{}_flatten'.format(name_prefix))(syntax_module_out)
+        x = layers.Dropout(0.25)(x)
+        
     # Step 2: Connect the averaged filter outputs to zero or more 
     # intermediate Dense layers before the final Dense layer
-    x = avg_pool
     for i in range(len(units) - 1):
         
         if activations[i] != 'leakyrelu':
@@ -529,6 +534,10 @@ def load_params(params):
             attribution_prior_params[key] = \
                 params['attribution_prior_params'][key]
     
+    loss_weights = bpnetdefaults.LOSS_WEIGHTS
+    if 'loss_weights' in params:
+        loss_weights = params['loss_weights']
+        
     bias_model = None
     if 'bias_model' in params:
         bias_model_path = params['bias_model']
@@ -547,7 +556,8 @@ def load_params(params):
     return (input_len, output_profile_len, motif_module_params, 
             syntax_module_params, profile_head_params, counts_head_params,
             profile_bias_module_params, counts_bias_module_params,
-            use_attribution_prior, attribution_prior_params, bias_model)
+            use_attribution_prior, attribution_prior_params, loss_weights,
+            bias_model)
 
 
 def atac_dnase_bias_model(
@@ -650,6 +660,7 @@ def BPNet(
      counts_bias_module_params,
      use_attribution_prior, 
      attribution_prior_params, 
+     loss_weights,
      _) = load_params(bpnet_params)    
 
     # Step 1 - sequence input
@@ -783,7 +794,7 @@ def BPNet(
         
     else:
         # instantiate keras Model with inputs and outputs
-        return Model(
+        return CustomModel(total_tracks, loss_weights,
             inputs=inputs, outputs=[profile_outputs, logcounts_outputs])
 
 
@@ -850,6 +861,7 @@ def BPNet_ATAC_DNase(tasks, bias_tasks, bpnet_params, bias_bpnet_params,
      counts_bias_module_params,
      use_attribution_prior, 
      attribution_prior_params, 
+     loss_weights,
      bias_model) = load_params(bpnet_params)    
     
     # providing a bias model is mandatory for ATAC/DNase
@@ -975,6 +987,6 @@ def BPNet_ATAC_DNase(tasks, bias_tasks, bpnet_params, bias_bpnet_params,
         
     else:
         # instantiate keras Model with inputs and outputs
-        return Model(
-            inputs=inputs, outputs=[out_logits, out_logcounts])
+        return CustomModel(total_tracks, loss_weights,
+            inputs=inputs, outputs=[profile_outputs, logcounts_outputs])
     

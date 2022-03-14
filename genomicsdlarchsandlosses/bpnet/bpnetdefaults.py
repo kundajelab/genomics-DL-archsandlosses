@@ -77,3 +77,5 @@ ATTRIBUTION_PRIOR_PARAMS = {
     'profile_grad_loss_weight': 200,
     'counts_grad_loss_weight': 100
 }
+
+LOSS_WEIGHTS = [1.0, 1.0]
