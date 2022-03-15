@@ -276,7 +276,8 @@ def counts_head(
             syntax_module_out (tensorflow.keras.layers.Conv1D): output
                 of the BPNet syntax module
             name (str): name for the counts head layer
-            units (int): dimensionality of the counts output space 
+            units (list): list of Dense layer sizes with the last layer
+                specifying the dimensionality of the counts output space
                 (same as number of tasks)
             name_prefix (str): prefix to use for layer names
         Returns:
@@ -292,7 +293,7 @@ def counts_head(
             name='{}_flatten'.format(name_prefix))(syntax_module_out)
         x = layers.Dropout(0.25)(x)
         
-    # Step 2: Connect the averaged filter outputs to zero or more 
+    # Step 2: Connect the Flattened layer to zero or more 
     # intermediate Dense layers before the final Dense layer
     for i in range(len(units) - 1):
         
