@@ -291,7 +291,7 @@ def counts_head(
     else:
         x = layers.Flatten(
             name='{}_flatten'.format(name_prefix))(syntax_module_out)
-        x = layers.Dropout(0.25)(x)
+        x = layers.Dropout(0.25, name="counts_flatten_dropout")(x)
         
     # Step 2: Connect the Flattened layer to zero or more 
     # intermediate Dense layers before the final Dense layer
@@ -300,17 +300,19 @@ def counts_head(
         if activations[i] != 'leakyrelu':
             # we can use this formulation for all activations that 
             # have a string name representation
-            x = layers.Dense(units[i], activation=activations[i])(x)
+            x = layers.Dense(units[i], name='counts_dense_{}'.format(i),
+                             activation=activations[i])(x)
         else:
             # add a separate leaky relu layer since keras doesnt 
             # have a string name for leaky relu
-            x = layers.Dense(units[i])(x)
-            x = layers.LeakyReLU()(x)
+            x = layers.Dense(units[i], name='counts_dense_{}'.format(i))(x)
+            x = layers.LeakyReLU(name='counts_dense_LReLU_{}'.format(i))(x)
         
-        # add dropout layer
+        #add dropout layer
         if dropouts[i] > 0.0:
-            x = layers.Dropout(dropouts[i])(x)
-    
+            x = layers.Dropout(dropouts[i],
+                               name='counts_dropout_{}'.format(i))(x)
+            
     # the final Dense layer with linear activation and no dropout
     return layers.Dense(units[-1], name=name)(x)
 
