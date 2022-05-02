@@ -45,7 +45,6 @@ class CustomModel(Model):
             total_mnll_loss = 0
             for i in range(self.num_output_tracks):
                 loss = multinomial_nll(_y[..., i], _y_pred[..., i])
-                print(loss)
                 total_mnll_loss += loss
             return total_mnll_loss
             
@@ -61,10 +60,6 @@ class CustomModel(Model):
             
     def train_step(self, data):
         x, y, sample_weights = data
-        print(kb.int_shape(x['sequence']))
-        print(kb.int_shape(y['profile_predictions']))
-        print(kb.int_shape(y['logcounts_predictions']))
-        print(kb.int_shape(sample_weights))
     
         with tf.GradientTape() as tape:
             loss, total_mnll_loss, mse_loss = \
