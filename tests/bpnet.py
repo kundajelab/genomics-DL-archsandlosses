@@ -151,13 +151,12 @@ def load_json(params_json_file):
 # single unstranded task with linear activations
 # model_v1 = BPNet(tasks, load_json('/users/zahoor/lab_data3/Chromatin-Atlas/GM12878_baseline/baseline_filtered_peaks_500/bpnet_params.json'))
 model_v1 = BPNet(tasks, load_json('bpnet_params_1_task_old_counts_head.json'))
-
-model_v2 = BPNet(tasks, load_json('bpnet_params_1_task_old_counts_head.json'))
-
 model_v1.summary()
-model_v2.summary()
 plot_model(
     model_v1, to_file='model_v1.png', show_shapes=True, show_layer_names=True)
+
+model_v2 = BPNet(tasks, load_json('bpnet_params_1_task.json'))
+model_v2.summary()
 plot_model(
     model_v2, to_file='model_v2.png', show_shapes=True, show_layer_names=True)
 
