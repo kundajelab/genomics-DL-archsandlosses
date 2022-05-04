@@ -2,9 +2,9 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import tensorflow.keras.backend as kb
 
-
 from genomicsdlarchsandlosses.bpnet.attribution_prior_utils import \
     smooth_tensor_1d
+
 
 class CustomMeanSquaredError(object):
     """ Custom class to compute mean squared error
@@ -23,7 +23,8 @@ class CustomMeanSquaredError(object):
 
     def get_config(self):
         return {}
-    
+
+
 def multinomial_nll(true_counts, logits):
     """Compute the multinomial negative log-likelihood
     Args:
@@ -149,5 +150,3 @@ def fourier_att_prior_loss(
     return tf.cond(tf.equal(tf.size(pos_grads), 0), 
                    _zero_constant,
                    lambda:  _fourier_att_prior_loss(pos_grads))
-
-                   

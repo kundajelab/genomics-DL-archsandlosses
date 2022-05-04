@@ -1,12 +1,6 @@
 """
-    This module contains all the fucntions that define various
+    This module contains all the functions that define various
     bpnet network architectures
-
-    Fucntions:
-    
-        BPNet: The network architecture for BPNet as described in 
-            the paper: 
-            https://www.biorxiv.org/content/10.1101/737981v1.full.pdf
 """
 
 from numpy.random import seed
@@ -596,8 +590,6 @@ def atac_dnase_bias_model(
     # outputs of the bias model
     return bias_model_def.outputs
     
-    
-    
 
 def BPNet(
     tasks, bpnet_params, initiliaze_as_bias_model=False, one_hot_input=None, 
@@ -992,4 +984,3 @@ def BPNet_ATAC_DNase(tasks, bias_tasks, bpnet_params, bias_bpnet_params,
         # instantiate keras Model with inputs and outputs
         return CustomModel(total_tracks, loss_weights,
             inputs=inputs, outputs=[profile_outputs, logcounts_outputs])
-    
