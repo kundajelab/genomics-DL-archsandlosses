@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="genomicsdlarchsandlosses",
-    version="0.0.1",
+    version="1.0.0",
     description=("Model architectures and loss functions for training "
                  "deeplearning models on CHIP-seq, CHIP-exo, CHIP-nexus, "
                  "ATAC-seq, RNA-seq (or any other genomics assays that use "
