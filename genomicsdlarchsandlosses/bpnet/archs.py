@@ -222,10 +222,13 @@ def syntax_module(
                 
             x = layers.add([conv_output_without_activation, x_activated], 
                            name='{}_add_{}'.format(name_prefix, i))
-            
+     
+    # RELU for the last dilation layer
+    x_activated = layers.ReLU(name=x.name.split('/')[0]+'_relu')(x)
+    
     # the final output from the dilated convolutions with 
     # resnet-style connections
-    return x
+    return x_activated
 
 
 def profile_head(
