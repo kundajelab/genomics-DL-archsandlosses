@@ -31,7 +31,7 @@ class CustomModel(Model):
         y_pred = self(x, training=training)  # Forward pass
 
         # logcounts mse loss without sample weights
-        mse_loss = keras.losses.mean_squared_error(
+        counts_loss = keras.losses.mean_squared_error(
             y['logcounts_predictions'], y_pred[1])
 
         # for mnll loss we mask out samples with weight == 0.0
@@ -54,15 +54,15 @@ class CustomModel(Model):
 
         # sum of weighted losses
         loss =  (self.loss_weights[0] * total_mnll_loss) + \
-            (self.loss_weights[1] * mse_loss)
+            (self.loss_weights[1] * counts_loss)
 
-        return loss, total_mnll_loss, mse_loss
+        return loss, total_mnll_loss, counts_loss
             
     def train_step(self, data):
         x, y, sample_weights = data
     
         with tf.GradientTape() as tape:
-            loss, total_mnll_loss, mse_loss = \
+            loss, total_mnll_loss, counts_loss = \
                 self._get_loss(x, y, sample_weights)
             
         # Compute gradients
@@ -77,7 +77,7 @@ class CustomModel(Model):
         return {"loss": self.loss_tracker.result(),
                 "batch_loss": loss,
                 "profile_predictions_loss": total_mnll_loss, 
-                "logcounts_predictions_loss": mse_loss}
+                "logcounts_predictions_loss": counts_loss}
 
     @property
     def metrics(self):
@@ -93,7 +93,7 @@ class CustomModel(Model):
         # Unpack the data
         x, y, sample_weights = data
         
-        loss, total_mnll_loss, mse_loss = \
+        loss, total_mnll_loss, counts_loss = \
             self._get_loss(x, y, sample_weights, training=False)
             
         # Compute our own metrics
@@ -101,4 +101,4 @@ class CustomModel(Model):
         return {"loss": self.loss_tracker.result(),
                 "batch_loss": loss,
                 "profile_predictions_loss": total_mnll_loss, 
-                "logcounts_predictions_loss": mse_loss}
+                "logcounts_predictions_loss": counts_loss}
